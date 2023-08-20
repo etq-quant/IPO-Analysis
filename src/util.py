@@ -18,7 +18,7 @@ ycol_name_mapper = {
     '20d_ret':'Next 20 Days Return',
 }
 
-def load_ipo_data():
+def load_ipo_data(include_ace = True):
     sector_df = pd.read_excel("mk_sector.xlsx")
     fdf = pd.read_excel("IPO_2.xlsx")
     fdf['Code'] = fdf['Code'].apply(lambda x: str(x).zfill(4))
@@ -28,10 +28,11 @@ def load_ipo_data():
     fdf['Open_Ret'] = fdf['Open']/fdf['IPO_Price'] - 1
     fdf['Close_Open'] = fdf['Close'] - fdf['Open']
 
-    cols = ['Code', 'Date', 'Stock', 'StockLongName', 'Open', 'Close',
-           'PriceChange1', 'PctChange1', 'Open_Ret', 'Close_Open', 'Volume', 'NumShares', '20d_ret', 'EXCH_MKT_GRP', 'GICS_SECTOR_NAME',
-           'Oversubscription_Rate', 'Total_Applicants']
-    fdf.shape
+    cols = ['Code', 'Date', 'Stock', 'StockLongName',
+            'EXCH_MKT_GRP', 'GICS_SECTOR_NAME',
+            'Open', 'Close', 'Volume', 'NumShares',
+            'PriceChange1', 'PctChange1', 'Open_Ret', 'Close_Open', '20d_ret', 
+            'Oversubscription_Rate', 'Total_Applicants']
     fdf2 = fdf[cols].sort_values("Date").copy()
 
     enc = OneHotEncoder(handle_unknown='ignore', drop='first')
@@ -45,39 +46,48 @@ def load_ipo_data():
         xcols += [f"C{j}"]
     u1 = fdf2[['Total_Applicants', 'Oversubscription_Rate']].isna().mean(axis=1) ==  0
     fdf3 = fdf2.loc[u1].copy()
+    if not include_ace:
+        u2 = fdf3['EXCH_MKT_GRP'].isin(['ACE'])
+        fdf3 = fdf3.loc[~u2].copy()
     return fdf3
 
 
 class Model():
-    def __init__(self, fdf3, ycol):
+    def __init__(self, fdf3, ycol, selected_stocks=None):
         # ycol = 'PctChange1'
         xcols = ['Oversubscription_Rate','Total_Applicants',]
-        model_ = HuberRegressor()
+        
 
-        X,y = fdf3[xcols], fdf3[ycol]
-        X_train = X.iloc[:-1]
-        X_test = X.iloc[-1:]
-        y_train = y.iloc[:-1]
-        y_test = y.iloc[-1:]
+        df = fdf3.copy()
+        X,y = df[xcols], df[ycol]
+        if selected_stocks is None:
+            X_train = X.iloc[:-1]
+            X_test = X.iloc[-1:]
+            y_train = y.iloc[:-1]
+            y_test = y.iloc[-1:]
+            names = df.iloc[-1:]['Stock']
+        else:
+            u1 = df['Stock'].isin(selected_stocks)
+            X_test,y_test = df.loc[u1, xcols], df.loc[u1, ycol]
+            X_train,y_train = df.loc[~u1, xcols], df.loc[~u1, ycol]
+            names = df.loc[u1,'Stock']
+        
+
         # fdf3.shape,X_train.shape, X_test.shape
-
+        model_ = HuberRegressor()
         model_.fit(X_train,y_train)
         self.model_ = model_
         y_pred_train = model_.predict(X_train)
         y_pred_test = model_.predict(X_test)
-        # mae = mean_absolute_error(y_train, y_pred_train)
 
-        X2 = sm.add_constant(X)  # Adding a constant term for the intercept
-        X_train = X2.iloc[:-1]
-        X_test = X2.iloc[-1:]
-        y_train = y.iloc[:-1]
-        y_test = y.iloc[-1:]
-        model = sm.OLS(y_train, X_train).fit()
+        X_train_2 = sm.add_constant(X_train)  # Adding a constant term for the intercept
+        X_test_2 = sm.add_constant(X_test)  # Adding a constant term for the intercept
+        model = sm.OLS(y_train, X_train_2).fit()
         self.model = model
-        predictions = model.predict(X_test)
-        
+        predictions = model.predict(X_test_2)
+
         # Getting predictions and standard errors
-        std_errors = model.get_prediction(X_test).se_mean
+        std_errors = model.get_prediction(X_test_2).se_mean
 
         # Calculate prediction intervals
         alpha = 0.05  # significance level
@@ -86,7 +96,6 @@ class Model():
 
         lower_bound_test = y_pred_test - t_value * std_errors
         upper_bound_test = y_pred_test + t_value * std_errors
-        # lower_bound, y_pred_test, upper_bound
         
         # Create a scatter plot
         xp = fdf3[xcols[0]]
@@ -112,13 +121,13 @@ class Model():
             showarrow=False,             # No arrow for the annotation
             font=dict(size=12)           # Font size for the annotation text
         )
+        for x, y_act, y, lb, ub, name in zip(X_test['Oversubscription_Rate'], y_test, y_pred_test, lower_bound_test,upper_bound_test, names):
+            error_y = [lb, ub]  # Error of [1, 2] for the 50th point
+            highlight_trace = go.Scatter(x=[x], y=[y], mode='markers', error_y=dict(type='data', array=error_y, visible=True) , marker=dict(color='darkblue'), name=f'{name} (Prediction)')
+            fig.add_trace(highlight_trace)
 
-        error_y = [lower_bound_test, upper_bound_test]  # Error of [1, 2] for the 50th point
-        highlight_trace = go.Scatter(x=[xp.values[-1]], y=[y_pred_test[-1]], mode='markers', error_y=dict(type='data', array=error_y, visible=True) , marker=dict(color='darkblue'), name='MSTGOLF (Prediction)')
-        fig.add_trace(highlight_trace)
-
-        trace_2 = go.Scatter(x=[xp.values[-1]], y=[y_test.values[-1]], mode='markers', marker=dict(color='darkred'), name='MSTGOLF (Actual)')
-        fig.add_trace(trace_2)
+            trace_2 = go.Scatter(x=[x], y=[y_act], mode='markers', marker=dict(color='darkred'), name=f'{name} (Actual)')
+            fig.add_trace(trace_2)
 
         # Show the plot
         fig.update_traces(showlegend=False, selector=dict(name="Linear Regression"))
@@ -135,7 +144,6 @@ class Model():
         degrees_freedom = self.model.df_resid  # degrees of freedom
         alpha = 0.05
         t_value = np.abs(t.ppf(alpha / 2, df=degrees_freedom))  # t-score for two-tailed test
-        print('t-value', t_value)
         lower_bound = y_pred - t_value * std_errors
         upper_bound = y_pred + t_value * std_errors
         return [lower_bound[0], y_pred[0], upper_bound[0]]

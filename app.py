@@ -29,8 +29,14 @@ with cols_a[1]:
 with cols_a[2]:
     param_2 = st.number_input('Total Applicants', min_value=0, max_value=100000, value=2603, step = 1, key='ta')
 
-fdf = load_ipo_data()
-M = Model(fdf, ycol)
+include_ace = st.checkbox('Include Ace Market', value=False)
+
+fdf = load_ipo_data(include_ace=include_ace)
+stocks = fdf['Stock'].unique()
+n = len(stocks)
+selected_stocks = st.multiselect(label='Stocks', options=stocks, default=['MSTGOLF', 'CEB'])
+
+M = Model(fdf, ycol, selected_stocks)
 # pred = M.predict(x1=5.28, x2=2603)
 pred = M.predict(x1=param_1, x2=param_2)
 st.text(f'Prediction (lower bound): {pred[0]:.1%}')
