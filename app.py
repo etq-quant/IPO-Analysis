@@ -27,9 +27,8 @@ fdf = load_ipo_data(include_ace=include_ace)
 stocks = fdf['Stock'].unique()
 n = len(stocks)
 
-
 with tab_chart:
-    selected_stocks = st.multiselect(label='Stocks', options=stocks, default=['MSTGOLF', 'CEB'])
+    selected_stocks = st.multiselect(label='Stocks', options=stocks, default=['MSTGOLF', 'FFB'])
     M = Model(fdf, ycol, selected_stocks)
     st.plotly_chart(M.fig, use_container_width=True)
 

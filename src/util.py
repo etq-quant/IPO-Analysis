@@ -87,19 +87,20 @@ class Model():
         predictions = model.predict(X_test_2)
 
         # Getting predictions and standard errors
-        # std_errors = model.get_prediction(X_test_2).se_mean
+        std_errors = model.get_prediction(X_test_2).se_mean
         mae = mean_absolute_error(y_train, y_pred_train)
 
         # Calculate prediction intervals
         alpha = 0.05  # significance level
         degrees_freedom = model.df_resid  # degrees of freedom
         t_value = np.abs(t.ppf(alpha / 2, df=degrees_freedom))  # t-score for two-tailed test
-
+        # print(std_errors)
         # lower_bound_test = y_pred_test - t_value * std_errors
         # upper_bound_test = y_pred_test + t_value * std_errors
-        print(mae, y_pred_test)
+        # print(mae, y_pred_test)
         lower_bound_test = y_pred_test - mae
         upper_bound_test = y_pred_test + mae
+        err_vals = [t_value*j for j in std_errors]
         
         # Create a scatter plot
         xp = fdf3[xcols[0]]
@@ -125,11 +126,12 @@ class Model():
             showarrow=False,             # No arrow for the annotation
             font=dict(size=12)           # Font size for the annotation text
         )
-        for x, y_act, y, lb, ub, name in zip(X_test['Oversubscription_Rate'], y_test, y_pred_test, lower_bound_test,upper_bound_test, names):
+        for err_val, x, y_act, y, lb, ub, name in zip(err_vals, X_test['Oversubscription_Rate'], y_test, y_pred_test, lower_bound_test,upper_bound_test, names):
             # error_y = [lb, ub]  # Error of [1, 2] for the 50th point
             # error_y = [y-mae, y+mae]  # Error of [1, 2] for the 50th point
             # print(name, error_y)
             error_y = [mae]
+            error_y = [err_val]
             highlight_trace = go.Scatter(x=[x], y=[y], mode='markers', error_y=dict(type='data', array=error_y, visible=True) , marker=dict(color='darkblue'), name=f'{name} (Prediction)')
             fig.add_trace(highlight_trace)
 
